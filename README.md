@@ -1,66 +1,78 @@
-# OCT Retinal Layer Segmentation
+# OCT Retinal Layer Segmentation with PyTorch
 
-Deep learning-based segmentation of retinal layers in Spectral-Domain Optical Coherence Tomography (SD-OCT) B-scans, built with PyTorch.
+An end-to-end computer vision pipeline for automated retinal-layer segmentation from optical coherence tomography (OCT) B-scans using the Duke/Chiu 2015 OCT dataset.
 
-## Overview
+This project was developed as a focused research exercise at the intersection of **optometry, ophthalmic imaging, computer vision and machine learning**, with the goal of building practical experience in quantitative OCT analysis.
 
-Optical Coherence Tomography (OCT) is the standard imaging modality for diagnosing and monitoring retinal disease, and automated segmentation of individual retinal layers is a key building block for quantifying layer thickness and detecting pathology such as diabetic macular edema (DME). This project trains a U-Net to segment OCT B-scans into retinal layer regions, using the Duke SD-OCT dataset for DME as a testbed.
+## Research objective
+
+OCT provides high-resolution cross-sectional representations of retinal anatomy, but extracting quantitative structural information from these images can require accurate identification of anatomical boundaries.
+
+This project investigates whether a convolutional neural network can learn to segment retinal regions from manually annotated OCT scans, establishing a computational foundation for subsequent quantitative analysis of retinal and posterior-eye geometry.
 
 ## Dataset
 
-- **Source**: Duke SD-OCT dataset for Diabetic Macular Edema (Chiu et al., *Biomedical Optics Express*, 2015) — `datasets/duke/2015_BOE_Chiu/`.
-- **Subjects**: 10 subjects, each with 61 B-scans (496 × 768, grayscale) and two independent manual boundary annotations (grader 1, grader 2).
-- **Annotated scans only**: most B-scans per subject are unannotated; only ~11 scans per subject have manual boundary labels, giving ~110 usable annotated scans (grader 1) across all subjects.
-- **Masks**: the 8 manually-annotated boundaries are converted into dense pixel-wise masks (`src/masks.py`) — background (class 0) plus 7 inter-boundary retinal layer regions (classes 1–7).
-- **Split**: subject-level 80/20 train/validation split (`src/training/split.py`, `random_state=42`) — splitting by subject rather than by scan avoids leaking B-scans from the same eye across train and validation.
+The project uses the **Duke/Chiu 2015 OCT dataset**, distributed as MATLAB `.mat` files.
 
-## Method
+Each subject contains:
 
-### Architecture
+* 61 OCT B-scans
+* 768 A-scan columns per B-scan
+* 496 pixels in depth
+* Manual retinal-layer boundary annotations from two graders
+* Additional automatic and fluid annotations
 
-A 4-level U-Net (`src/models/unet.py`, built from `DoubleConv`/`DownBlock`/`UpBlock` modules):
+Only B-scans containing manual layer annotations are used for supervised segmentation.
 
-- Input: single-channel 496×768 OCT B-scan.
-- Encoder: 1→32→64→128→256→512 channels, each stage a `Conv-BN-ReLU ×2` block followed by max-pooling.
-- Decoder: transposed-convolution upsampling with skip connections back to the encoder, mirroring the encoder channel widths.
-- Output: 1×1 convolution to 8-class logits (background + 7 retinal layer regions), same spatial resolution as the input.
+Across the 10 subjects, the preprocessing pipeline identified **110 manually annotated B-scans**.
 
-### Loss
+## Setup
 
-Training started with plain `CrossEntropyLoss`. A combined Dice + Cross-Entropy loss (`DiceCrossEntropyLoss` in `src/training/losses.py`) was implemented as a follow-up experiment — softmax Dice over one-hot targets, averaged 50/50 with cross-entropy. In practice this combined loss **did not outperform** the cross-entropy-trained baseline on this dataset; the checkpoint from that run (`checkpoints/dice_ce_model.pth`) is kept for reference, but the reported results below are from the baseline model (`checkpoints/best_model.pth`).
+Dependencies actually used by this codebase: `torch`, `numpy`, `scipy`, `scikit-learn`, `matplotlib`, `tqdm`. There is no `requirements.txt` yet — install these with `pip` in a fresh environment before running the notebooks or `src/training/train.py`.
 
-### Training
+The Duke dataset (`.mat` files) is not included in this repository; place it under `datasets/duke/2015_BOE_Chiu/` before running the dataset/training notebooks.
 
-- Optimizer: Adam, learning rate `1e-3`.
-- Epochs: 20, batch size: 4.
-- No data augmentation.
-- Device: auto-selects Apple MPS → CUDA → CPU.
+## Pipeline
 
-## Results
-
-Evaluated on 22 held-out validation B-scans (2 held-out subjects):
-
-| Metric | Value |
-|---|---|
-| Mean Dice | 0.8282 |
-| Mean IoU | 0.7188 |
-| Pixel Accuracy | 0.9720 |
-
-Per-class Dice (class 0 = background, classes 1–7 = retinal layer regions):
-
-| Layer | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
-|---|---|---|---|---|---|---|---|---|
-| Dice | 0.9899 | 0.8001 | 0.8870 | 0.7587 | 0.7282 | 0.8603 | 0.8299 | 0.8085 |
-
-Layer 4 is the weakest-performing region, while the background class (unsurprisingly) is segmented almost perfectly.
-
-Qualitative best/average/worst-case comparisons (original scan / ground truth / prediction / overlay):
-
-![Representative segmentation results](figures/representative_segmentation_results.png)
-
-## Repository structure
-
+```text
+Raw MATLAB .mat files
+        │
+        ▼
+Subject-level data loading
+        │
+        ▼
+Manual boundary extraction
+        │
+        ▼
+8 retinal boundaries
+        │
+        ▼
+8-region pixel-wise segmentation masks
+        │
+        ▼
+Subject-level train/validation split
+        │
+        ▼
+PyTorch Dataset + DataLoader
+        │
+        ▼
+U-Net
+        │
+        ▼
+Retinal-layer segmentation
+        │
+        ▼
+Dice / IoU / Pixel Accuracy
+        │
+        ▼
+Qualitative prediction analysis
 ```
+
+## Implementation
+
+The project was deliberately structured as modular components rather than a single training script.
+
+```text
 src/
 ├── io.py                 # .mat subject loading
 ├── masks.py               # boundary annotations -> pixel-wise masks
@@ -87,20 +99,197 @@ notebooks/
 └── 08_evaluation.ipynb
 ```
 
-## Setup
+### Data handling
 
-Dependencies actually used by this codebase: `torch`, `numpy`, `scipy`, `scikit-learn`, `matplotlib`, `tqdm`. There is no `requirements.txt` yet — install these with `pip` in a fresh environment before running the notebooks or `src/training/train.py`.
+`src/io.py`
 
-The Duke dataset (`.mat` files) is not included in this repository; place it under `datasets/duke/2015_BOE_Chiu/` before running the dataset/training notebooks.
+Loads the raw MATLAB subject files into a predictable subject representation containing:
 
-## Limitations & future work
+* OCT images
+* manual layer annotations
+* optional fluid annotations
+* subject metadata
+* utilities for identifying annotated scans
 
-- Macro-averaged Dice/IoU are pulled up by the easy, dominant background class — per-class numbers are more informative than the mean.
-- No data augmentation is applied during training.
-- The combined Dice+CE loss did not improve over cross-entropy alone in this setup and was not adopted.
-- Only grader-1 annotations are used; inter-grader variability (grader 2) is not evaluated.
-- Segmentation classes are positional (layer 0–7) rather than mapped to anatomical layer names (e.g. ILM, RNFL, RPE).
+### Mask generation
+
+`src/masks.py`
+
+Converts the eight manually annotated retinal boundaries into an eight-region pixel-wise segmentation mask (background plus seven inter-boundary layer regions).
+
+The mask generator was tested across all manually annotated scans and includes safeguards against invalid boundary coordinates that could otherwise produce silent NumPy negative-indexing errors.
+
+### Visualization
+
+`src/visualization.py`
+
+Provides reusable functions for:
+
+* displaying OCT B-scans
+* displaying retinal boundaries
+* displaying segmentation masks
+* overlaying masks on OCT images
+
+### Dataset
+
+`src/dataset.py`
+
+Implements a PyTorch `Dataset` that:
+
+* indexes only annotated B-scans
+* supports either manual grader
+* normalizes OCT images to `[0,1]`
+* returns tensors in CNN-compatible format
+* produces integer class-label masks compatible with `CrossEntropyLoss`
+* retains subject/scan provenance for debugging
+
+### Model
+
+`src/models/unet.py`
+
+A U-Net architecture implemented from scratch in PyTorch.
+
+Input:
+
+```text
+(B, 1, 496, 768)
+```
+
+Output:
+
+```text
+(B, 8, 496, 768)
+```
+
+The eight output classes correspond to background plus the seven retinal layer regions defined by the project's mask convention, derived from the eight annotated boundaries.
+
+### Training
+
+Training uses:
+
+* subject-level train/validation splitting
+* PyTorch DataLoader
+* Adam optimization
+* Cross-Entropy loss
+* 20 training epochs
+
+Subject-level splitting was used deliberately to avoid having B-scans from the same subject appear in both training and validation sets.
+
+## Results
+
+### Final baseline model
+
+**U-Net + Cross-Entropy loss**
+
+| Metric         | Validation result |
+| -------------- | ----------------: |
+| Mean Dice      |        **0.8328** |
+| Mean IoU       |        **0.7233** |
+| Pixel Accuracy |        **0.9711** |
+
+### Per-layer Dice
+
+| Layer |   Dice |
+| ----: | -----: |
+|     0 | 0.9899 |
+|     1 | 0.8001 |
+|     2 | 0.8870 |
+|     3 | 0.7587 |
+|     4 | 0.7282 |
+|     5 | 0.8603 |
+|     6 | 0.8299 |
+|     7 | 0.8085 |
+
+The strongest segmentation performance occurred for Layer 0, while Layers 3 and 4 were comparatively more challenging.
+
+### Qualitative results
+
+Best/average/worst validation cases (original scan / ground truth / prediction / overlay):
+
+![Representative segmentation results](figures/representative_segmentation_results.png)
+
+## Controlled loss-function experiment
+
+A second experiment replaced Cross-Entropy loss with a combined Dice + Cross-Entropy objective.
+
+| Model                        |  Mean Dice |   Mean IoU | Pixel Accuracy |
+| ---------------------------- | ---------: | ---------: | -------------: |
+| U-Net + Cross-Entropy        | **0.8328** | **0.7233** |         0.9711 |
+| U-Net + Dice + Cross-Entropy |     0.8282 |     0.7188 |     **0.9720** |
+
+The combined loss did not improve the principal segmentation metrics, so the original Cross-Entropy model was retained as the final model.
+
+This controlled comparison also illustrates an important principle of the project: additional model complexity is only retained when it produces measurable improvement.
+
+## Why this project matters
+
+The purpose of the project is not simply to obtain a high segmentation score.
+
+The broader objective is to develop the ability to move from raw ophthalmic imaging data to reproducible quantitative analysis:
+
+**OCT acquisition → image processing → anatomical representation → machine learning → validation → quantitative measurement**
+
+Accurate retinal-layer segmentation can provide a computational foundation for extracting structural measurements from OCT images. Extending this workflow from individual 2D B-scans toward volumetric OCT and geometric analysis represents a natural direction for future research.
+
+## Limitations
+
+This is a focused proof-of-concept rather than a clinically validated system.
+
+Important limitations include:
+
+* relatively small number of manually annotated B-scans
+* evaluation on a held-out subset of the same dataset
+* 2D rather than volumetric 3D segmentation
+* no external dataset validation
+* no clinical deployment
+* no formal assessment of inter-grader variability
+
+The results should therefore be interpreted as evidence of technical feasibility rather than clinical performance.
+
+## Reproducibility
+
+The repository separates:
+
+```text
+data loading
+      ↓
+preprocessing
+      ↓
+mask generation
+      ↓
+dataset construction
+      ↓
+model training
+      ↓
+inference
+      ↓
+evaluation
+```
+
+This structure makes individual stages independently testable and allows the segmentation model to be replaced or extended without rewriting the underlying data-processing pipeline.
+
+## Future direction
+
+The most important extension is moving beyond 2D retinal-layer segmentation toward **volumetric OCT analysis and quantitative posterior-eye geometry**.
+
+Potential research directions include:
+
+* 3D OCT volume processing
+* robust surface reconstruction
+* de-warping and geometric correction
+* curvature estimation
+* quantitative posterior-eye shape metrics
+* external validation
+* clinically meaningful biomarker development
 
 ## License
 
 Code is released under the MIT License (see `LICENSE`). The Duke SD-OCT dataset is a separate third-party resource — cite Chiu et al., *Biomedical Optics Express* 2015 if you use it in research.
+
+## Author
+
+**Philip Abakah**
+Doctor of Optometry
+University of Cape Coast, Ghana
+
+Research interests: **vision science, ophthalmic imaging, computer vision, machine learning and computational approaches to eye care.**
