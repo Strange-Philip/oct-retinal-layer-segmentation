@@ -204,9 +204,13 @@ The strongest segmentation performance occurred for Layer 0, while Layers 3 and 
 
 ### Qualitative results
 
-Best/average/worst validation cases (original scan / ground truth / prediction / overlay):
+Best (Dice = 0.8844), average (Dice = 0.8296), and worst (Dice = 0.7902) validation cases, each showing the original scan, ground truth, U-Net prediction, and prediction overlay:
 
-![Representative segmentation results](figures/representative_segmentation_results.png)
+![Best case](figures/best_case.png)
+
+![Average case](figures/base_case.png)
+
+![Worst case](figures/worst_case.png)
 
 ## Controlled loss-function experiment
 
