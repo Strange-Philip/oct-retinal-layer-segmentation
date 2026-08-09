@@ -5,7 +5,7 @@ from src.io import load_dataset
 from pathlib import Path
 from src.training.split import split_subjects
 from src.training.loaders import create_loaders
-from src.training.losses import create_cross_entropy_loss
+from src.training.losses import create_dice_ce_loss
 from src.training.trainer import train_one_epoch
 from src.training.evaluate import evaluate
 
@@ -95,7 +95,10 @@ def main():
     # Loss
     # -------------------------
 
-    criterion = create_cross_entropy_loss()
+    criterion = create_dice_ce_loss(
+    num_classes=8,
+    dice_weight=0.5,
+)
 
 
     # -------------------------
@@ -154,7 +157,7 @@ Val Loss:   {val_loss:.4f}
 
         torch.save(
             model.state_dict(),
-            save_dir / "best_model.pth",
+            save_dir / "dice_ce_model.pth",
         )
 
         print("✓ Saved new best model")
